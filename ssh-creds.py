@@ -77,12 +77,10 @@ class SSH_remote_host():
             channel.send(f"{self.sudopass}\n")
             while not channel.recv_ready():
                 time.sleep(1)
-            data = channel.receive.read.splitlines()
-            remote_result = data
+            data = channel.recv(1024).decode('utf-8').split('\n')
+            remote_result = [x.strip('\n\r') for x in data if len(x) > 0 ]
             logging.debug(f'{command} on {self.host} returned: {remote_result}')
             logging.info(f'command run on {self.host}')
-
-            # any return cleanup?
         else:
             logging.debug(f'attempting to run {command} on {self.host} sudo=False')
             stdin, stdout, stderr = self.connection.exec_command(command)
@@ -145,14 +143,16 @@ def get_pubkeys(remote_user, ssh_client):
     location for all of the authorized keys files
     '''
     logging.debug(f'enumerating keys for {remote_user} on {ssh_client.host}')
-    pdb.set_trace()
     if remote_user == 'root':
         command = "cat /root/.ssh/authorized_keys"
     else:
         command = f"cat /home/{remote_user}/.ssh/authorized_keys"
-    key_list = ssh_client.run_command(command, sudo=True)
+    raw_key_list = ssh_client.run_command(command, sudo=True)
+    # do key cleanup here. shortest ssh key > 80 chars
+    # split at the spaces, only return the second element (pubkey) it may be interesting to parse key options later. TODO
+    key_list = [x.split(' ')[1] for x in raw_key_list if len(x) > 80]
     logging.info(f'found {len(key_list)} keys for user {remote_user} on {ssh_client.host}')
-    return remoteuser_pubkeys
+    return key_list
 
 def run_commandset(host):
     ''' Get the a record of keys:users per host. Host is an object based on the
@@ -160,13 +160,17 @@ def run_commandset(host):
     dictionaries'''
     host_records = []
     userlist = get_users(host)
-    command_time = datetime.datetime.now(datetime.timezone.utc)
+    command_time = str(datetime.datetime.now(datetime.timezone.utc))
     for e_user in userlist:
         pubkeys = get_pubkeys(e_user, host)
+        if pubkeys == []:
+            pubkeys = ['None']
+
         for e_pubkey in pubkeys:
             record = {'key' : e_pubkey, 'user' : e_user, 'host' : host.host,
                     'time' : command_time}
             host_records.append(record)
+    print(host_records)
     return host_records
 
 def main():
@@ -177,13 +181,15 @@ def main():
         try:
             client = SSH_remote_host(host, global_user)
             hostrecords = run_commandset(client)
-            allrecords = allrecords + hostrecords
+            pdb.set_trace()
+            allrecords.append(hostrecords)
             logging.info(f'new {host} records written to allrecords')
         except:
+            print('errorERROR')
             logging.error(f'an error occured running the commands on host:{host}')
         finally:
             client.close()
-        convert_to_json(datetime.datetime.today(),allrecords)
+    convert_to_json(str(datetime.datetime.today()),allrecords)
     return
 
 if __name__ == '__main__':
