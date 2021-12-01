@@ -1,2 +1,4 @@
 ssh-creds-env/
 targets
+ssh-key-inventory*
+*.log

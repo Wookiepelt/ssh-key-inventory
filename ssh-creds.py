@@ -10,13 +10,14 @@ import ipaddress
 import getpass
 import pathlib
 import datetime
+import time
 from socket import gethostbyname as getipaddress
 
 parser = argparse.ArgumentParser(description="an ssh key inventory script. Returns a folder of json files showing which ssh public keys are associated with which users on which hosts.  Best viewed when imported into Elasticsearch. This script currently only works for Linux hosts")
 parser.add_argument("-t", "--targetfile", default=pathlib.Path.cwd().joinpath("targets"), type=pathlib.Path, action="store", help="the path to a textfile with all ip or hostnames to scan. One hostname or IP per line.  the default targetfile is in the current working directory and named targets")
 parser.add_argument("-s", "--sudoall", action="store_true", help="use the same sudo password for all hosts, the default is to prompt for each host")
 parser.add_argument("-u", "--user", required=True, help="the user to login to the remote system, must have sudo privs")
-parser.add_argument("-v", "--verbosity", action="count", default=1, help="adjust output verbosity")
+parser.add_argument("-v", "--verbosity", action="count", default=3, help="adjust output verbosity")
 args = parser.parse_args()
 
 if args.verbosity >= 3:
@@ -63,15 +64,20 @@ class SSH_remote_host():
         logging.debug(f'connected to {self.username}@{self.host}:{self.port}') 
 
     def run_command(self, command, sudo=False):
+        self.connect()
         if sudo:
             # TODO issues with running sudo commands and passing input
             channel = self.connection.invoke_shell()
-            channel.send(command)
+            channel.send('sudo ' + command + '\n')
             time.sleep(1)
-            if channel.recv_ready():
-
+            while not channel.recv_ready():
+                time.sleep(1)
+            channel.recv(1024) 
+            # this is a throw-away for getting rid of the last command we sent
             channel.send(f"{self.sudopass}\n")
-            data = stdout.read.splitlines()
+            while not channel.recv_ready():
+                time.sleep(1)
+            data = channel.receive.read.splitlines()
             remote_result = data
             logging.debug(f'{command} on {self.host} returned: {remote_result}')
             logging.info(f'command run on {self.host}')
@@ -82,9 +88,9 @@ class SSH_remote_host():
             stdin, stdout, stderr = self.connection.exec_command(command)
             return_output = stdout.readlines()
             logging.info(f'command run on {self.host}')
-            # any return cleanup?
-            # TODO cleanup returns
-            remote_result = return_output
+            # remove blank lines and the newline at the end of each output
+            remote_result = [x.strip('\n') for x in return_output if
+            len(x.strip('\n')) > 0] 
         self.close()
         logging.info(f'connection closed with {self.host}')
         return remote_result
@@ -124,7 +130,7 @@ def generate_hosts():
 
 def get_users(ssh_client):
     logging.debug(f'enumerating users for {ssh_client.host}')
-    command = "cat /etc/passwd | grep -ve 'nologin$' -ve 'false$' -ve 'sync$'"
+    command = "cat /etc/passwd | grep -ve 'nologin$' -ve 'false$' -ve 'sync$' | cut -d: -f1"
     remote_users = ssh_client.run_command(command)
     if remote_users:
         logging.info(f'found {len(remote_users)} on host {ssh_client.host}')
@@ -134,11 +140,12 @@ def get_users(ssh_client):
         raise Exception(f'no users found for {ssh_client.host} there is an error with this host or the /etc/password file... or this script!')
     # return a list of users
 
-def get_pubkeys(remote_user):
+def get_pubkeys(remote_user, ssh_client):
     ''' Gets the public keys for the given remote user, this assumes the default
     location for all of the authorized keys files
     '''
     logging.debug(f'enumerating keys for {remote_user} on {ssh_client.host}')
+    pdb.set_trace()
     if remote_user == 'root':
         command = "cat /root/.ssh/authorized_keys"
     else:
@@ -155,7 +162,7 @@ def run_commandset(host):
     userlist = get_users(host)
     command_time = datetime.datetime.now(datetime.timezone.utc)
     for e_user in userlist:
-        pubkeys = get_pubkeys(e_user)
+        pubkeys = get_pubkeys(e_user, host)
         for e_pubkey in pubkeys:
             record = {'key' : e_pubkey, 'user' : e_user, 'host' : host.host,
                     'time' : command_time}
@@ -168,7 +175,6 @@ def main():
     # TODO - add capability to run in parallel 
     for host in hosts:
         try:
-            pdb.set_trace()
             client = SSH_remote_host(host, global_user)
             hostrecords = run_commandset(client)
             allrecords = allrecords + hostrecords
