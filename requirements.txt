@@ -1,0 +1,9 @@
+bcrypt==3.2.0
+cffi==1.15.0
+cryptography==36.0.0
+ipaddress==1.0.23
+paramiko==2.8.0
+pathlib==1.0.1
+pycparser==2.21
+PyNaCl==1.4.0
+six==1.16.0
