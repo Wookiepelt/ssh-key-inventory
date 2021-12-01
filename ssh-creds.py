@@ -1,6 +1,5 @@
 #!/bin/python3
 
-import pdb
 import paramiko
 import argparse
 import logging
@@ -66,7 +65,6 @@ class SSH_remote_host():
     def run_command(self, command, sudo=False):
         self.connect()
         if sudo:
-            # TODO issues with running sudo commands and passing input
             channel = self.connection.invoke_shell()
             channel.send('sudo ' + command + '\n')
             time.sleep(1)
@@ -170,22 +168,19 @@ def run_commandset(host):
             record = {'key' : e_pubkey, 'user' : e_user, 'host' : host.host,
                     'time' : command_time}
             host_records.append(record)
-    print(host_records)
     return host_records
 
 def main():
     allrecords = []
     hosts = generate_hosts()
-    # TODO - add capability to run in parallel 
+    # TODO - add capability to run in parallel?
     for host in hosts:
         try:
             client = SSH_remote_host(host, global_user)
             hostrecords = run_commandset(client)
-            pdb.set_trace()
             allrecords.append(hostrecords)
             logging.info(f'new {host} records written to allrecords')
         except:
-            print('errorERROR')
             logging.error(f'an error occured running the commands on host:{host}')
         finally:
             client.close()
