@@ -1,6 +1,6 @@
 bcrypt==3.2.0
 cffi==1.15.0
-cryptography==36.0.0
+cryptography==39.0.1
 ipaddress==1.0.23
 paramiko==2.8.0
 pathlib==1.0.1
